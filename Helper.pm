@@ -4,16 +4,29 @@
 
 package TL::Helper;
 
-our $VERSION = 'V1.0';
+our $VERSION = 'V1.1';
 
 use warnings;
 use strict;
 
 use Carp;
+use File::Basename;
+use FindBin(      qw/$Bin $Script/ );
+use Scalar::Util( qw/isvstring reftype/ );
 
 require Exporter;
 our @ISA       = ( qw(Exporter) );
 our @EXPORT_OK = ( qw/help getoptions man version/ );
+
+sub getoptions;
+sub help;
+sub man;
+sub version;
+sub _version;
+sub _commit;
+sub _date;
+
+my $prog = basename( $0, qw/.pl/ );
 
 # Return just the Getopt::Long slice of the options array (removing help)
 
@@ -47,7 +60,8 @@ sub getoptions {
 sub help {
     my( $options, $cmdargs, $fh ) = @_;
 
-    croak( "Invalid options array\n" ) if( @$options == 0 || @$options % 3 );
+    croak( "Invalid options array\n" )
+        if( ref $options ne 'ARRAY' or @$options == 0 || @$options % 3 );
 
     # Parse option specifiers
 
@@ -115,7 +129,17 @@ sub help {
 
     # Generate help
 
-    my $out = sprintf( "%s [options]%s\n\nOptions:\n", $0, $cmdargs ? " $cmdargs" : '' );
+    if( $cmdargs //= '' ) {
+        my $pl = length( $prog ) + 1;
+        $cmdargs = [ split( /\n/, $cmdargs ) ] unless( ref $cmdargs );
+        for( my $i = 0; $i < @$cmdargs; ++$i ) {
+            if( $i == 0 || substr( $cmdargs->[$i], 0, 1 ) eq '_' ) {
+                $cmdargs->[$i] =~ s/^_?/[options] /;
+            }
+        }
+        $cmdargs = ' ' . join( "\n" . ( ' ' x $pl ), @$cmdargs );
+    }
+    my $out = sprintf( "%s%s\n\nOptions:\n", $prog, $cmdargs );
 
     foreach my $opt ( @opts ) {
         my @keys = @{ $opt->{keys} };
@@ -184,7 +208,7 @@ sub man {
         $Pod::Usage::Formatter = 'Pod::Text::Termcap' if( -t $fh );
         require Pod::Usage;
     } or
-        croak( "Install Pod::Usage or use 'perldoc $0'\n" );
+        croak( "Install Pod::Usage or use 'perldoc $prog'\n" );
 
     Pod::Usage::pod2usage( -exitval => 'NOEXIT', -output => $fh, -verbose => 2 );
     return $str if( defined $str );
@@ -195,33 +219,114 @@ sub man {
 # Display/return versions of caller, this module
 
 sub version {
-    my( $fh ) = @_;
-
-    my( $str, $v, $pkg ) = ( '', undef, caller( 0 ) );
-    {
-        no strict 'refs';
-        $v = "${pkg}::VERSION";
-        $v = $$v;
-    }
-    if( defined $v ) {
-        $str = sprintf( "Version %s, Helper %s\n", $v, $VERSION );
-    } else {
-        require POSIX;
-        POSIX->import( qw(strftime) );
-
-        my $mt = ( stat $0 )[9];
-        if( defined $mt ) {
-            $str = sprintf( "Version of %s, Helper %s\n",
-                            strftime( '%B %d %Y %H:%M:%S', localtime( $mt ) ), $VERSION );
-        } else {
-            $str = sprintf( "Unknown\n" );
+    my( $fh, $others );
+    while( @_ && ( my $rt = reftype $_[0] ) ) {
+        if( $rt eq 'GLOB' ) {
+            $fh = shift;
+        } elsif( $rt = 'ARRAY' ) {
+            $others = shift;
         }
     }
+
+    my %modes;
+    if( ref $_[0] ) {
+        %modes = %{ $_[0] };
+    } else {
+        foreach( @_ ) {
+            my( $k, $v ) = split( /[=:]/, $_, 2 );
+            $modes{$k} = $v // (   $k eq 'commit'  ? 7
+                                 : $k eq 'vstring' ? 'u'
+                                 :                   1 );
+        }
+    }
+
+    %modes = ( withhelper => 1 ) unless( keys %modes );
+
+    my( $str, $v ) = ( '' );
+    $v = _version( scalar caller( 0 ), \%modes );
+    if( defined $v ) {
+        $v   = _commit( $v, \%modes );
+        $str = sprintf( "Version %s", $v );
+    }
+    if( $modes{withdate} || !defined $v ) {
+        $str = _date( $v, $str, \%modes );
+    }
+
+    $str = "Version: Unknown" unless( length $str );
+
+    if( $modes{withhelper} ) {
+        my $v = _version( __PACKAGE__ );
+        $str .= sprintf( ", Helper %s", _commit( $v // 'version Unknown', \%modes ) );
+        $str  = _date( $v, $str, \%modes, __PACKAGE__ );
+    }
+    if( $others ) {
+        foreach my $mod ( @$others ) {
+            my $v = _version( $mod, \%modes );
+            $str .=
+                sprintf( ", %s %s", $mod, _commit( $v // 'version Unknown', \%modes ) );
+            $str = _date( $v, $str, \%modes, $mod );
+        }
+    }
+    $str .= "\n";
 
     unless( defined wantarray ) {
         $fh //= \*STDOUT;
         printf $fh ( $str );
         exit;
+    }
+    return $str;
+}
+
+sub _version {
+    my( $pkg, $modes ) = @_;
+
+    no strict 'refs';
+    my $v = ${"${pkg}::VERSION"};
+    $v = sprintf( '%v' . ( $modes->{vstring} // 'u' ), $v ) if( isvstring( $v ) );
+    return $v;
+}
+
+sub _commit {
+    my( $str, $modes ) = @_;
+
+    return $str unless( defined $str );
+
+    my $l = length( $str );
+    ;
+    if( ( $l == 40 || $l == 64 ) && $str =~ /^[[:xdigit:]]{$l}$/ ) {
+        $modes->{commit} //= 7;
+    }
+
+    if( ( $l = $modes->{commit} ) && $str =~ /^[[:xdigit:]]{4,64}$/ ) {
+
+        # 40 for sha1 repos, 64 for sha256
+        return sprintf( 'git-%-.*s', ( $l // 7 ), $str );
+    }
+    return $str;
+}
+
+sub _date {
+    my( $v, $str, $modes, $pkg ) = @_;
+
+    return $str unless( $modes->{withdate} );
+    require POSIX;
+    POSIX->import( qw(strftime) );
+
+    my $file;
+    if( $pkg ) {
+        my $self = ( $pkg =~ s,::,/,gr ) . '.pm';
+        return $str unless( $file = ( $self = $INC{$self} ) );
+    } else {
+        $file = "$Bin/$Script";
+    }
+    my $mt = ( stat $file )[9];
+    if( defined $mt ) {
+        my $date = strftime( '%B %d %Y %H:%M:%S', localtime( $mt ) );
+        if( defined $v ) {
+            $str .= sprintf( ' (%s)', $date );
+        } else {
+            $str = sprintf( "%sersion of %s", ( $pkg ? 'v' : 'V' ), $date );
+        }
     }
     return $str;
 }
@@ -270,7 +375,7 @@ The options array's size must be an even multiple of three.
 
 =head1 I<getoptions( $options )>
 
-I<getoptions>takes a reference to the options array.
+I<getoptions> takes a reference to the options array.
 
 Normally (in array context), it returns a copy of the array with the help
 strings removed, which can be used by C<Getopt::Long::GetOptions()>.
@@ -288,11 +393,13 @@ I<help> requires a reference to the options array.
 C<$cmdargs> summarizes any non-option arguments, e.g. C<'[infile] [outfile]'>.  Omit
 or use C<undef> if none.
 
+If multiple command forms exist, separate with C\n> or provide a reference to an array.  Preceede each item after the first with C<_> if repeatingC<[options]> is desired.
+
 In void context, it outputs help to C<$fh>, defaulting to C<STDOUT>.  It then exits.
 
 Otherwise, it returns the help as a string.
 
-=head1 I<man( $fh) >
+=head1 I<man( $fh )>
 
 I<man> provides the program's POD as a man page.
 
@@ -302,13 +409,50 @@ Otherwise, if C<$fh> is specified, it writes to C<STDOUT> and returns true.
 
 If no C<$fh> is specified, it returns the manual as a string.
 
-=head1 I<version( $fh )>
+=head1 I<version( [$fh] [,\@others] [,$options | ,@options...] )>
 
 I<version> provides the version of the caller and this module.
 
 In void context, it outputs the version to C<$fh>, defaulting to C<STDOUT>.  It then exits.
 
 Otherwise, it returns the version as a string.
+
+C<@options> specifies the format of the version string.
+
+=over 4
+
+=item * C<withdate>
+
+If true, includes the main script's last modified date, even if it has a C<$VERSION>.
+
+=item * C<withhelper>
+
+If true, includes the version of C<TL::Helper>
+
+=item * C<commit[:$length]>
+
+If C<$VERSION> looks like a C<git> commit id, prefix it with C<git-> and
+truncate it to $length digits (default 7).  Set $length to 0 to inhibit.
+
+=item * C<vstring:$fmt>
+
+If C<$VERSION> is a vstring, C<$fmt> is the C<sprintf> conversion code.
+Default is C<u>; other numeric codes (e.g. C<o>, C<x> can be used.
+
+=back
+
+The default is to only include the date if C<$VERSION> is undefined, and to
+include the version of C<TL::Helper>.  If any option is specified, no
+default is applied.  For just the main script's version, use C<withhelper:0>.
+
+If a hashref is provided, the keys are the options and values should be true (1)
+for boolean options or the desired value.
+
+If an arrayref is provided, the contents are package names whose C<$VERSION>s
+are alos included.  This should be limited to key dependencies.
+
+If an option list is provided, values may be specified by appending C<:value>
+to the option name.  (C<=> may be used instead of C<:>).
 
 =head1 BUGS
 
@@ -320,7 +464,7 @@ Timothe Litt  E<lt>litt@acm.orgE<gt>
 
 =head1 COPYRIGHT and LICENSE
 
-Copyright (c) 2025 Timothe Litt
+Copyright (c) 2025-2026 Timothe Litt
 
 Permission is hereby granted, free of charge, to any person obtaining a
 copy of this software and associated documentation files (the "Software"),

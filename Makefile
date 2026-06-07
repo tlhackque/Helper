@@ -17,6 +17,7 @@ TIDY  := perltidy -b
 all : README.md LICENSE
 
 README.md : $(module) Makefile
+	$(PODCHECKER) $<
 	$(POD2MARKDOWN) $< | $(SED) -e '/^# COPYRIGHT and LICENSE/,$$d' >$@
 
 LICENSE : $(module) Makefile
