@@ -1,0 +1,52 @@
+# add 'n' after - to negate
+-se         # errors to stderr, not *.ERR
+-i=4        # Indent
+-l=90       # Line len
+-ole=unix   # Line end
+-ci=4       # Continued indent
+-lp         # line=up paren lists
+-xlp
+-cti=1      # Line up closing tokens 0 no 1 match open 2 indent more 3 indent always
+-nicb       # Indent closing } in code
+-olq        # Outdent long quotes
+-ola        # Outdent labels
+-nokw       # Outdent redo, next, last, goto, return
+#-okwl="redo next last goto return"
+-pt=0       # parens 0 '( x )' 1 '(x) ( x y )' 3 (xy)
+-sbt=1      # []
+-bt=1       # {notcode}
+#-nsts
+-nsfs       # ' ; ' in for
+-asc        # add optional semis before }
+-ndsm       # delete ; null stmt
+-aws        # add whitespace to code
+-dws        # remove old ws
+-sak="return cmp and or eq ne xor"
+-nsak="my local our if else elsif until unless while for foreach switch case given when" # space after kwd before (
+-nsfp       # Space fcn (
+-ibc        # indent block comments to match code
+-isbc       # Don't if not leading space on line
+-olc        # Outdent long comments
+-msc=2      # min space to side comment
+-fpsc=0     # Target column side comments
+-hsc        # Align hanging side comments
+-ncsc       # Auto comment long block close
+#-csci=n    # Define long (6)
+-fs         # Protect between #<<< and #>>>
+-ce         # Cuddle else
+-nbl        # { on new line
+#-sbl       # sub { on new line; copy -bl
+-nasbl      # anon sub {
+-nbli       # Indent brace left (on new line)
+#-blil="if elsif ..."
+-bar        # Open { on right, even folded
+-viu        # Align if & unless
+-vwe        # Align wide-equals
+-otr
+-vt=2
+-vtc=2
+-sot
+-sct
+-wba=". or and"
+-boc        # break old , (don't flatten lists)
+

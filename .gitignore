@@ -1,0 +1,17 @@
+*~
+*#
+.emacs*
+.#*
+*.swp
+*.tmp
+*.bak
+*.tdy
+*.tar.gz
+*.tgz
+*.orig
+*.old
+*.pdf
+*.html
+*.txt
+test
+test/*
