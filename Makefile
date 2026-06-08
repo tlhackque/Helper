@@ -1,16 +1,30 @@
 # Copyright (c) 2025-2026 Timothe LItt
 
+DOC := docs
+
 module := Helper.pm
-PERLDOC :=    /usr/bin/perldoc
+
+MKDIR := mkdir
+CHMOD := chmod
+CHOWN := chown
+RM    := rm
+
+PERLDOC      := /usr/bin/perldoc
 PODCHECKER   := /usr/bin/podchecker
-POD2PDF      :=    /usr/bin/pod2pdf
-POD2HTML     :=    /usr/bin/pod2html
+POD2PDF      := /usr/bin/pod2pdf
+POD2HTML     := /usr/bin/pod2html
 POD2MARKDOWN := /usr/bin/pod2markdown
-POD2TEXT     :=   /usr/bin/pod2text
+POD2TEXT     := /usr/bin/pod2text
 
 SED   := /usr/bin/sed
 SHELL := /bin/bash
 TIDY  := perltidy -b
+
+owner    := litt:litt
+rdperms  := u=r,g=r,o=
+rwperms  := u=rw,g=r,o=
+xctperms := u=rwx,g=rx,o=
+dirperms := u=rwx,g=rwx,o=x
 
 .PHONY : all
 
@@ -18,31 +32,40 @@ all : README.md LICENSE
 
 README.md : $(module) Makefile
 	$(PODCHECKER) $<
-	$(POD2MARKDOWN) $< | $(SED) -e '/^# COPYRIGHT and LICENSE/,$$d' >$@
+	$(POD2MARKDOWN) $< | $(SED) -e '/^# COPYRIGHT and LICENSE/,$$d' >$@ && \
+	$(CHOWN) $(owner) $@ && $(CHMOD) $(rdperms) $@
 
 LICENSE : $(module) Makefile
-	$(PERLDOC) -F $< | $(SED) -ne '/^COPYRIGHT and LICENSE/,$$p' > $@
+	$(PERLDOC) -F $< | $(SED) -ne '/^SEE ALSO/,$$d' \
+	-e '/^COPYRIGHT and LICENSE/,$$p' >$@ && \
+	$(CHOWN) $(owner) $@ && $(CHMOD) $(rdperms) $@
 
-docs: 	Makefile \
-	$(addprefix docs/,$(addsuffix .pdf,$(basename $(module)))) \
-	$(addprefix docs/,$(addsuffix .txt,$(basename $(module)))) \
-	$(addprefix docs/,$(addsuffix .html,$(basename $(module))))
+$(DOC): 	Makefile \
+	$(addprefix $(DOC)/,$(addsuffix .pdf,$(basename $(module)))) \
+	$(addprefix $(DOC)/,$(addsuffix .txt,$(basename $(module)))) \
+	$(addprefix $(DOC)/,$(addsuffix .html,$(basename $(module))))
 
-docs/%.pdf : %.pm
-	mkdir -pv docs
+$(DOC)/%.pdf : %.pm
 	$(PODCHECKER) $<
-	$(POD2PDF) $< --timestamp --header --output=$@
+	$(MKDIR) -pv $(dir $@) && $(CHOWN) $(owner) $(dir $@) && \
+	$(CHMOD) $(dirperms) $(dir $@)
+	$(POD2PDF) $< --timestamp --header --output=$@ && \
+	$(CHOWN) $(owner) $@ && $(CHMOD) $(rdperms) $@
 
-docs/%.txt : %.pm
-	mkdir -pv docs
+$(DOC)/%.txt : %.pm
 	$(PODCHECKER) $<
-	$(POD2TEXT) $< $@
+	$(MKDIR) -pv $(dir $@) && $(CHOWN) $(owner) $(dir $@) && \
+	$(CHMOD) $(dirperms) $(dir $@)
+	$(POD2TEXT) $< $@ && $(CHOWN) $(owner) $@ && $(CHMOD) $(rdperms) $@
 
-docs/%.html : %.pm
-	mkdir -pv docs
+$(DOC)/%.html : %.pm
 	$(PODCHECKER) $<
-	$(eval t = $<.title) $(POD2HTML) $< --backlink --header --title="$(file < $(t))" --outfile=$@
-	@rm -f pod2htmd.tmp || true
+	$(MKDIR) -pv $(dir $@) && $(CHOWN) $(owner) $(dir $@) && \
+	$(CHMOD) $(dirperms) $(dir $@)
+	$(eval t = $<.title) $(POD2HTML) $< --backlink --header \
+	--title="$(file < $(t))" --outfile=$@ \
+	 && $(CHOWN) $(owner) $@ && $(CHMOD) $(rdperms) $@
+	@$(RM) -f pod2htmd.tmp || true
 
 .PHONY : tidy
 
